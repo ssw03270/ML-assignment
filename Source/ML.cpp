@@ -7,6 +7,11 @@
 
 using namespace std;
 
+struct Data {
+    vector<vector<double>> x;
+    vector<double> y;
+};
+
 vector<string> columnsName = { "ID", "Sex", "Age", "lbankssts", "rbankssts",
        "lcaudalanteriorcingulate", "rcaudalanteriorcingulate",
        "lcaudalmiddlefrontal", "rcaudalmiddlefrontal", "lcuneus", "rcuneus",
@@ -321,7 +326,6 @@ void test(string fileName) {
     }
 }
 
-// 랜덤하게 vector 셔플
 vector<vector<double>> randomSuffle(vector<vector<double>> data) {
     std::random_device rd;
     std::mt19937 g(rd());
@@ -346,17 +350,17 @@ vector<vector<double>> changeDataType(vector<vector<string>> data) {
     return newData;
 }
 
-void dataSplit(vector<vector<double>>& x, vector<double>& y, vector<vector<double>> newData) {
+void dataSplit(Data& data, vector<vector<double>> newData) {
     for (const auto& datum : newData) {
         vector<double> xLine;
         for (int i = 1; i < datum.size(); i++) {        // 성별은 데이터에서 제외 (성별 데이터 위치 == 0)
             if (i == 1) {
-                y.push_back(datum[i]);  // 나이 데이터는 y에 저장
+                data.y.push_back(datum[i]);  // 나이 데이터는 y에 저장
                 continue;
             }
             xLine.push_back(datum[i]);  // 그 외에 다른 데이터는 x에 저장
         }
-        x.push_back(xLine);
+        data.x.push_back(xLine);
     }
 }
 
@@ -393,36 +397,36 @@ void dataScaling(vector<vector<double>>& x) {
     }
 }
 
-void trainTestSplit(vector<vector<double>> x, vector<double> y, vector<vector<double>>& x_train, vector<vector<double>>& x_test, vector<double>& y_train, vector<double>& y_test, int trainSize = 324) {
+void trainTestSplit(const Data data, Data& train, Data& test, int trainSize = 324) {
     // x와 y의 train 분리
     for (int i = 0; i < trainSize; i++) {
         vector<double> x_trainLine;
-        for (int j = 0; j < x[i].size(); j++) {
-            x_trainLine.push_back(x[i][j]);
+        for (int j = 0; j < data.x[i].size(); j++) {
+            x_trainLine.push_back(data.x[i][j]);
         }
-        x_train.push_back(x_trainLine);
-        y_train.push_back(y[i]);
+        train.x.push_back(x_trainLine);
+        train.y.push_back(data.y[i]);
     }
     // x와 y의 test 분리
-    for (int i = trainSize; i < x.size(); i++) {
+    for (int i = trainSize; i < data.x.size(); i++) {
         vector<double> x_testLine;
-        for (int j = 0; j < x[i].size(); j++) {
-            x_testLine.push_back(x[i][j]);
+        for (int j = 0; j < data.x[i].size(); j++) {
+            x_testLine.push_back(data.x[i][j]);
         }
-        x_test.push_back(x_testLine);
-        y_test.push_back(y[i]);
+        test.x.push_back(x_testLine);
+        test.y.push_back(data.y[i]);
     }
 }
 
-vector<vector<double>> featureAverage(vector<vector<double>>& x_train, vector<double>& y_train, int trainSize = 324) {
+vector<vector<double>> featureAverage(Data& data, int trainSize = 324) {
     // 각 나이 별로 feature 평균 저장
     vector<vector<double>> featureMeans(100, vector<double>(columnsName.size() - 2, 0));
     vector<int> ages(100);
     for (int i = 0; i < trainSize; i++) {
-        int age = y_train[i];
+        int age = data.y[i];
         featureMeans[age][0] = age;
-        for (int j = 0; j < x_train[i].size(); j++) {
-            featureMeans[age][j + 1] += x_train[i][j];
+        for (int j = 0; j < data.x[i].size(); j++) {
+            featureMeans[age][j + 1] += data.x[i][j];
         }
         ages[age] += 1;
     }
@@ -443,14 +447,14 @@ vector<vector<double>> featureAverage(vector<vector<double>>& x_train, vector<do
     return featureMeans;
 }
 
-void calculateFeaturesMae(vector<double>& featureMae, vector<int>& usefulColumns, vector<vector<double>> x_test, vector<double> y_test, vector<vector<double>> featureMeans) {
+void calculateFeaturesMae(vector<double>& featureMae, vector<int>& usefulColumns, vector<vector<double>> featureMeans, Data data) {
     // test 값을 이용해 각 feature 별로 나이 예측
     vector<vector<double>> finalAge;
-    for (int i = 0; i < x_test.size(); i++) {
+    for (int i = 0; i < data.x.size(); i++) {
         vector<double> inputData;   // x_test의 한 줄을 inputData에 저장
         vector<double> predictAge;  // 각 feature 별로 예측 나이 저장
-        for (int j = 0; j < x_test[i].size(); j++) {
-            inputData.push_back(x_test[i][j]);
+        for (int j = 0; j < data.x[i].size(); j++) {
+            inputData.push_back(data.x[i][j]);
         }
         // 각 feature 별로 가장 오차가 적은 나이 저장
         for (int k = 1; k < columnsName.size() - 2; k++) {
@@ -463,7 +467,7 @@ void calculateFeaturesMae(vector<double>& featureMae, vector<int>& usefulColumns
                     minAge = featureMeans[z][0];
                 }
             }
-            predictAge.push_back(abs(minAge - y_test[i]));
+            predictAge.push_back(abs(minAge - data.y[i]));
         }
         finalAge.push_back(predictAge);
     }
@@ -475,10 +479,10 @@ void calculateFeaturesMae(vector<double>& featureMae, vector<int>& usefulColumns
         for (int j = 0; j < finalAge.size(); j++) {
             featureSum += finalAge[j][i];
         }
-        if (featureSum / x_test.size() < 15) {
-            featureMae.push_back(-1 * featureSum / x_test.size());
+        if (featureSum / data.x.size() < 15) {
+            featureMae.push_back(-1 * featureSum / data.x.size());
             usefulColumns.push_back(i);
-            minFeatureMae = min(minFeatureMae, -1 * featureSum / x_test.size());
+            minFeatureMae = min(minFeatureMae, -1 * featureSum / data.x.size());
         }
     }
     // 음수가 된 fatureMae에서 가장 작은 값을 기준으로 1로 만든다
@@ -487,12 +491,12 @@ void calculateFeaturesMae(vector<double>& featureMae, vector<int>& usefulColumns
     }
 }
 
-double calculateMae(vector<double> featureMae, vector<int> usefulColumns, vector<vector<double>> featureMeans, vector<vector<double>> x_test, vector<double> y_test) {
+double calculateMae(vector<double> featureMae, vector<int> usefulColumns, vector<vector<double>> featureMeans, Data data) {
     double finalMae = 0;
-    for (int i = 0; i < x_test.size(); i++) {
+    for (int i = 0; i < data.x.size(); i++) {
         vector<double> inputData;   // test의 한 줄을 inputData에 저장
-        for (int j = 0; j < x_test[i].size(); j++) {
-            inputData.push_back(x_test[i][j]);
+        for (int j = 0; j < data.x[i].size(); j++) {
+            inputData.push_back(data.x[i][j]);
         }
         double predictAge = 0;      // 예측된 나이
         double weightSum = 0;       // 가중치의 총합
@@ -512,34 +516,30 @@ double calculateMae(vector<double> featureMae, vector<int> usefulColumns, vector
         }
         predictAge /= weightSum;
         predictAge = floor(predictAge);
-        finalMae += abs(predictAge - y_test[i]);
+        finalMae += abs(predictAge - data.y[i]);
     }
-    return finalMae / x_test.size();
+    return finalMae / data.x.size();
 }
+
 int main() {
     vector<vector<double>> newData = changeDataType(readFile("IXI_train.csv"));
     newData = randomSuffle(newData);
     
-    vector<vector<double>> x;           // x 데이터
-    vector<double> y;                   // y 데이터
-
-    dataSplit(x, y, newData);
-    dataScaling(x);
+    Data original;
+    dataSplit(original, newData);
+    dataScaling(original.x);
 
     // train test split
-    vector<vector<double>> x_train;
-    vector<vector<double>> x_test;
-    vector<double> y_train;
-    vector<double> y_test;
+    Data train, test;
     
-    trainTestSplit(x, y, x_train, x_test, y_train, y_test);
-    vector<vector<double>> featureMeans = featureAverage(x_train, y_train);
+    trainTestSplit(original, train, test);
+    vector<vector<double>> featureMeans = featureAverage(train);
 
     vector<double> featureMae;
     vector<int> usefulColumns;
-    calculateFeaturesMae(featureMae, usefulColumns, x_test, y_test, featureMeans);
+    calculateFeaturesMae(featureMae, usefulColumns, featureMeans, test);
 
-    double mae = calculateMae(featureMae, usefulColumns, featureMeans, x_test, y_test);
+    double mae = calculateMae(featureMae, usefulColumns, featureMeans, test);
     cout << mae << endl;
 
     saveParameta(mae, featureMae, usefulColumns, featureMeans);
