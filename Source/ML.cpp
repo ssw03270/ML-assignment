@@ -1,4 +1,4 @@
-﻿#include<iostream>
+#include<iostream>
 #include<fstream>
 #include<vector>
 #include<string>
@@ -262,7 +262,6 @@ void test(string fileName) {
         x.push_back(xLine);
     }
 
-    int dataCount = 0;
     vector<double> mean(columnsName.size() - 3);
     vector<double> std(columnsName.size() - 3);
 
@@ -318,7 +317,7 @@ void test(string fileName) {
             predictAge += minAge * weight;
         }
         predictAge /= weightSum;
-        cout << predictAge << endl;
+        cout << round(predictAge) << endl;
     }
 }
 
@@ -332,8 +331,7 @@ vector<vector<double>> randomSuffle(vector<vector<double>> data) {
     return data;
 }
 
-int main() {
-    vector<vector<string>> data = readFile("IXI_train.csv");    // 데이터 저장
+vector<vector<double>> changeDataType(vector<vector<string>> data) {
     vector<vector<double>> newData;
 
     bool isFirstLine = true;
@@ -345,12 +343,10 @@ int main() {
         }
         newData.push_back(line);
     }
+    return newData;
+}
 
-    newData = randomSuffle(newData);
-    
-    vector<vector<double>> x;           // x 데이터
-    vector<double> y;                   // y 데이터
-
+void dataSplit(vector<vector<double>>& x, vector<double>& y, vector<vector<double>> newData) {
     for (const auto& datum : newData) {
         vector<double> xLine;
         for (int i = 1; i < datum.size(); i++) {        // 성별은 데이터에서 제외 (성별 데이터 위치 == 0)
@@ -362,8 +358,9 @@ int main() {
         }
         x.push_back(xLine);
     }
-    
-    int dataCount = 0;
+}
+
+void dataScaling(vector<vector<double>>& x) {
     vector<double> mean(columnsName.size() - 3);
     vector<double> std(columnsName.size() - 3);
 
@@ -387,21 +384,16 @@ int main() {
         std[i] /= x.size();
         std[i] = sqrt(std[i]);
     }
-    
+
     // StandardScaler
     for (int i = 0; i < x.size(); i++) {
         for (int j = 0; j < x[i].size(); j++) {
             x[i][j] = (x[i][j] - mean[j]) / std[j];
         }
     }
+}
 
-    // train test split
-    vector<vector<double>> x_train;
-    vector<vector<double>> x_test;
-    vector<double> y_train;
-    vector<double> y_test;
-    int trainSize = 324;
-
+void trainTestSplit(vector<vector<double>> x, vector<double> y, vector<vector<double>>& x_train, vector<vector<double>>& x_test, vector<double>& y_train, vector<double>& y_test, int trainSize = 324) {
     // x와 y의 train 분리
     for (int i = 0; i < trainSize; i++) {
         vector<double> x_trainLine;
@@ -420,7 +412,9 @@ int main() {
         x_test.push_back(x_testLine);
         y_test.push_back(y[i]);
     }
+}
 
+vector<vector<double>> featureAverage(vector<vector<double>>& x_train, vector<double>& y_train, int trainSize = 324) {
     // 각 나이 별로 feature 평균 저장
     vector<vector<double>> featureMeans(100, vector<double>(columnsName.size() - 2, 0));
     vector<int> ages(100);
@@ -446,6 +440,10 @@ int main() {
         }
     }
 
+    return featureMeans;
+}
+
+void calculateFeaturesMae(vector<double>& featureMae, vector<int>& usefulColumns, vector<vector<double>> x_test, vector<double> y_test, vector<vector<double>> featureMeans) {
     // test 값을 이용해 각 feature 별로 나이 예측
     vector<vector<double>> finalAge;
     for (int i = 0; i < x_test.size(); i++) {
@@ -469,9 +467,8 @@ int main() {
         }
         finalAge.push_back(predictAge);
     }
+
     // predictAge를 바탕으로 각 feature 별로 mae 값 계산하고 사용하기 좋은 feature 탐색
-    vector<double> featureMae;
-    vector<int> usefulColumns;
     double minFeatureMae = 999;
     for (int i = 0; i < columnsName.size() - 3; i++) {
         double featureSum = 0;
@@ -488,10 +485,9 @@ int main() {
     for (int i = 0; i < featureMae.size(); i++) {
         featureMae[i] += -1 * minFeatureMae + 1;
     }
+}
 
-    // 
-    // 
-    // test 값을 이용해 각 feature 별로 나이 예측
+double calculateMae(vector<double> featureMae, vector<int> usefulColumns, vector<vector<double>> featureMeans, vector<vector<double>> x_test, vector<double> y_test) {
     double finalMae = 0;
     for (int i = 0; i < x_test.size(); i++) {
         vector<double> inputData;   // test의 한 줄을 inputData에 저장
@@ -518,7 +514,32 @@ int main() {
         predictAge = floor(predictAge);
         finalMae += abs(predictAge - y_test[i]);
     }
-    double mae = finalMae / x_test.size();
+    return finalMae / x_test.size();
+}
+int main() {
+    vector<vector<double>> newData = changeDataType(readFile("IXI_train.csv"));
+    newData = randomSuffle(newData);
+    
+    vector<vector<double>> x;           // x 데이터
+    vector<double> y;                   // y 데이터
+
+    dataSplit(x, y, newData);
+    dataScaling(x);
+
+    // train test split
+    vector<vector<double>> x_train;
+    vector<vector<double>> x_test;
+    vector<double> y_train;
+    vector<double> y_test;
+    
+    trainTestSplit(x, y, x_train, x_test, y_train, y_test);
+    vector<vector<double>> featureMeans = featureAverage(x_train, y_train);
+
+    vector<double> featureMae;
+    vector<int> usefulColumns;
+    calculateFeaturesMae(featureMae, usefulColumns, x_test, y_test, featureMeans);
+
+    double mae = calculateMae(featureMae, usefulColumns, featureMeans, x_test, y_test);
     cout << mae << endl;
 
     saveParameta(mae, featureMae, usefulColumns, featureMeans);
