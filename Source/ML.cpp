@@ -247,7 +247,12 @@ vector<vector<double>> changeDataType(vector<vector<string>> data) {
         if (isFirstLine) { isFirstLine = false; continue; }
         vector<double> line;
         for (const auto& index : datum) {
-            line.push_back(stod(index));
+            if (index.compare("") == 0) {
+                line.push_back(0);
+            }
+            else {
+                line.push_back(stod(index));
+            }
         }
         newData.push_back(line);
     }
